@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: emissions_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-emissions}
+      POSTGRES_USER: ${POSTGRES_USER:-emissions}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-emissions}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - emissions_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Optional: candidates can choose to use it for idempotency keys, caching, etc.
+  redis:
+    image: redis:7-alpine
+    container_name: emissions_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Optional: DB admin UI for reviewers/candidates. Safe to keep.
+  # If you don't want extra surface area, remove this service.
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: emissions_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+
+volumes:
+  emissions_pg_data:
