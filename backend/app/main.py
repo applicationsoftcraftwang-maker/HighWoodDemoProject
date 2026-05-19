@@ -20,7 +20,7 @@ from pydantic import ValidationError
 from app.db.database import init_emissions_db_pool, shutdown_emissions_db_pool, acquire_emissions_connection
 from app.db.migrate import run_migrations, seed
 from app.middleware.response import success, error
-from app.routers import sites
+from app.routers import sites, ingest
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -87,6 +87,7 @@ async def generic_handler(request: Request, exc: Exception):
 # Routers
 prefix = "/api/v1"
 app.include_router(sites.router, prefix=prefix)
+app.include_router(ingest.router, prefix=prefix)
 
 @app.get("/api/v1/health")
 async def health_check() -> dict[str, str, str]:
