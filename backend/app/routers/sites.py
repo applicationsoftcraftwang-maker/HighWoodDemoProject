@@ -41,7 +41,7 @@ async def create_site(
     request: Request,
     customer_id: UUID = Depends(get_customer_id),
 ):
-    pool = request.app.state.pool
+    pool = request.app.state.db_pool
 
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -119,7 +119,7 @@ async def get_site(
     request: Request,
     customer_id: UUID = Depends(get_customer_id),
 ):
-    pool = request.app.state.pool
+    pool = request.app.state.db_pool
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
