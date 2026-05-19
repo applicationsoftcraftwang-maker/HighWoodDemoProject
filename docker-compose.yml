@@ -17,20 +17,6 @@ services:
       timeout: 3s
       retries: 20
 
-  # Optional: candidates can choose to use it for idempotency keys, caching, etc.
-  redis:
-    image: redis:7-alpine
-    container_name: emissions_redis
-    restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    command: ["redis-server", "--appendonly", "no"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   # Optional: DB admin UI for reviewers/candidates. Safe to keep.
   # If you don't want extra surface area, remove this service.
   pgadmin:
