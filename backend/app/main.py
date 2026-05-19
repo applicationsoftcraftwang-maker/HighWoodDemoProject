@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from app.db.database import init_emissions_db_pool, shutdown_emissions_db_pool, acquire_emissions_connection
 from app.db.migrate import run_migrations, seed
 from app.middleware.response import success, error
+from app.routers import sites
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -83,11 +84,12 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 async def generic_handler(request: Request, exc: Exception):
     return error("INTERNAL_ERROR", str(exc), 500)
 
+# Routers
+prefix = "/api/v1"
+app.include_router(sites.router, prefix=prefix)
+
 @app.get("/api/v1/health")
 async def health_check() -> dict[str, str, str]:
-    """
-    Basic service health check endpoint.
-    """
     return {
         "status": "ok",
         "service": "methane-emissions-platform",
