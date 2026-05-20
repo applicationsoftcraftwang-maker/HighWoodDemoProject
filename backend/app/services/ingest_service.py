@@ -28,7 +28,7 @@ class _ConcurrentDuplicate(Exception):
     pass
 class IngestService:
     async def process_batch(self, dto: IngestBatchRequest, customer_id: UUID, pool: asyncpg.Pool) -> IngestBatchResponse:
-        request_fingerprint = self._fingerprint_request(dto)
+        request_fingerprint = self._hash_request(dto)
 
         async with pool.acquire() as conn:
             existing_job = await self._find_existing_ingestion_job(
@@ -75,12 +75,25 @@ class IngestService:
             )
 
     async def _execute_command(self, conn: asyncpg.Connection, dto: IngestBatchRequest, customer_id: UUID, request_fingerprint: str,) -> IngestBatchResponse:
-        received_record_count = len(dto.readings)
-        processed_record_count = received_record_count
-        total_methane_value = sum(Decimal(reading.emission_value)
-                                  for reading in dto.readings)
+        site_row = await conn.fetchrow(
+            """
+            SELECT
+                site_id,
+                methane_emission_limit,
+                methane_accumulated_emissions_to_date
+            FROM sites
+            WHERE site_id = $1
+                AND customer_id = $2
+            """,
+            dto.site_id,
+            customer_id,
+        )
+
+        if site_row is None:
+            raise CustomerSiteNotFoundError(str(dto.site_id))
 
         async with conn.transaction():
+            # Step 1: PESSIMISTIC LOCK FIRST
             site_row = await conn.fetchrow(
                 """
                 SELECT
@@ -89,27 +102,16 @@ class IngestService:
                     methane_accumulated_emissions_to_date
                 FROM sites
                 WHERE site_id = $1
-                  AND customer_id = $2
+                    AND customer_id = $2
                 FOR UPDATE
                 """,
                 dto.site_id,
                 customer_id,
             )
-
             if site_row is None:
                 raise CustomerSiteNotFoundError(str(dto.site_id))
-            previous_site_total = Decimal(
-                site_row["methane_accumulated_emissions_to_date"])
-            methane_limit = Decimal(site_row["methane_emission_limit"])
-            new_site_total = previous_site_total + total_methane_value
-            limit_exceeded = new_site_total > methane_limit
 
-            response_message = (
-                "Methane readings processed, but the configured site limit was exceeded"
-                if limit_exceeded
-                else "Methane readings processed successfully"
-            )
-
+            # Step 2: insert idempotency record
             try:
                 ingestion_job_id = await conn.fetchval(
                     """
@@ -121,7 +123,8 @@ class IngestService:
                         processed_record_count,
                         ingestion_token,
                         trace_request_id,
-                        response_message
+                        response_message,
+                        request_fingerprint
                     )
                     VALUES (
                         $1,
@@ -131,7 +134,8 @@ class IngestService:
                         0,
                         $4,
                         $5,
-                        $6
+                        $6,
+                        $7
                     )
                     RETURNING ingestion_job_id
                     """,
@@ -141,11 +145,13 @@ class IngestService:
                     dto.ingestion_token,
                     dto.trace_request_id,
                     "Methane ingestion request accepted",
+                    request_fingerprint,
                 )
 
             except asyncpg.UniqueViolationError:
                 raise _ConcurrentDuplicate()
 
+            # Step 3: insert all readings/ingestion
             await conn.executemany(
                 """
                 INSERT INTO methane_emission_readings (
@@ -171,6 +177,23 @@ class IngestService:
                 ],
             )
 
+            received_record_count = len(dto.readings)
+            processed_record_count = received_record_count
+            total_methane_value = sum(Decimal(reading.emission_value)
+                                      for reading in dto.readings)
+            previous_site_total = Decimal(
+                site_row["methane_accumulated_emissions_to_date"])
+            methane_limit = Decimal(site_row["methane_emission_limit"])
+            new_site_total = previous_site_total + total_methane_value
+            limit_exceeded = new_site_total > methane_limit
+
+            response_message = (
+                "Methane readings processed, but the configured site limit was exceeded"
+                if limit_exceeded
+                else "Methane readings processed successfully"
+            )
+
+            # Step 4: atomically update site total ingestions
             await conn.execute(
                 """
                 UPDATE sites
@@ -185,6 +208,7 @@ class IngestService:
                 customer_id,
             )
 
+            # Step 5: persist final response for duplicate replay
             await conn.execute(
                 """
                 UPDATE emission_ingestion_jobs
@@ -200,6 +224,7 @@ class IngestService:
                 ingestion_job_id,
             )
 
+            # Step 6: log an audit event with all relevant details for this ingestion
             await conn.execute(
                 """
                 INSERT INTO emission_audit_events (
@@ -273,7 +298,8 @@ class IngestService:
                 received_record_count,
                 processed_record_count,
                 response_message,
-                response_error_message
+                response_error_message,
+                request_fingerprint
             FROM emission_ingestion_jobs
             WHERE customer_id = $1
               AND site_id = $2
@@ -295,7 +321,7 @@ class IngestService:
         Replay a completed ingestion when the same ingestion_token is submitted.
         If the ingestion_token is reused with a different body, reject it.
         """
-        if existing_job["trace_request_id"] != dto.trace_request_id:
+        if existing_job["request_fingerprint"] != request_fingerprint:
             raise MethaneIngestionTokenConflictError(dto.ingestion_token)
 
         return IngestBatchResponse(
@@ -315,7 +341,7 @@ class IngestService:
             response_error_message=existing_job["response_error_message"],
         )
 
-    def _fingerprint_request(self, dto: IngestBatchRequest) -> str:
+    def _hash_request(self, dto: IngestBatchRequest) -> str:
         payload = {
             "site_id": str(dto.site_id),
             "ingestion_token": dto.ingestion_token,
