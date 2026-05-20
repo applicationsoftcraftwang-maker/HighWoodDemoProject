@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.db.migrate import run_migrations, seed  # noqa: E402
+
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -30,11 +32,26 @@ SEEDED_SITE_NAMES = (
 )
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def reset_db() -> None:
-    conn = await asyncpg.connect(DATABASE_URL)
+@pytest_asyncio.fixture
+async def pool() -> asyncpg.Pool:
+    """
+    Function-scoped asyncpg pool.
 
-    try:
+    Important:
+    Do not use scope='session' here unless pytest-asyncio is configured to use
+    a session-scoped event loop. asyncpg pools are bound to the event loop that
+    created them.
+    """
+    test_pool = await asyncpg.create_pool(
+        DATABASE_URL,
+        min_size=2,
+        max_size=20,
+    )
+
+    async with test_pool.acquire() as conn:
+        await run_migrations(conn)
+        await seed(conn)
+
         await conn.execute(
             """
             TRUNCATE TABLE
@@ -58,23 +75,13 @@ async def reset_db() -> None:
         await conn.execute(
             """
             UPDATE sites
-            SET methane_accumulated_emissions_to_date = 0
-            """
+            SET
+                methane_accumulated_emissions_to_date = 0,
+                updated_at = NOW()
+            WHERE customer_id = $1
+            """,
+            DEMO_CUSTOMER_ID,
         )
-
-    finally:
-        await conn.close()
-
-    yield
-
-
-@pytest_asyncio.fixture
-async def pool() -> asyncpg.Pool:
-    test_pool = await asyncpg.create_pool(
-        DATABASE_URL,
-        min_size=2,
-        max_size=20,
-    )
 
     try:
         yield test_pool
@@ -82,28 +89,12 @@ async def pool() -> asyncpg.Pool:
         await test_pool.close()
 
 
-@pytest.fixture
-def customer() -> TestClient:
-    """
-    FastAPI test customer for API-level tests.
-
-    The TestClient runs the FastAPI lifespan, so the app creates and closes its
-    PostgreSQL pool the same way it does in normal local execution.
-    """
-    os.environ["DATABASE_URL"] = DATABASE_URL
-    os.environ["RUN_MIGRATIONS"] = "false"
-
-    from app.main import app
-
-    with TestClient(app) as test_customer:
-        yield test_customer
-
-
 @pytest_asyncio.fixture
-async def site_id() -> uuid.UUID:
-    conn = await asyncpg.connect(DATABASE_URL)
-
-    try:
+async def site_id(pool: asyncpg.Pool) -> uuid.UUID:
+    """
+    Return one seeded methane monitoring site.
+    """
+    async with pool.acquire() as conn:
         value = await conn.fetchval(
             """
             SELECT site_id
@@ -115,18 +106,29 @@ async def site_id() -> uuid.UUID:
             DEMO_CUSTOMER_ID,
         )
 
-        if value is None:
-            raise RuntimeError(
-                "No seeded site found for the demo customer. "
-                "Run `python -m app.db.migrate` before running tests."
-            )
+    if value is None:
+        raise RuntimeError(
+            "No seeded site found for the demo customer. "
+            "Check run_migrations() and seed()."
+        )
 
-        return value
-
-    finally:
-        await conn.close()
+    return value
 
 
 @pytest_asyncio.fixture
 async def customer_id() -> uuid.UUID:
     return DEMO_CUSTOMER_ID
+
+
+@pytest.fixture
+def customer() -> TestClient:
+    """
+    FastAPI test client for API-level tests.
+    """
+    os.environ["DATABASE_URL"] = DATABASE_URL
+    os.environ["RUN_MIGRATIONS"] = "false"
+
+    from app.main import app
+
+    with TestClient(app) as test_customer:
+        yield test_customer
