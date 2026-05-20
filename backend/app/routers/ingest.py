@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from app.middleware.customer import get_customer_id
 from app.middleware.response import error, success
 from app.models.schemas import IngestBatchRequest
-from app.services.exceptions import EmissionsError
+from app.services.exceptions import EmissionsPlatformError
 from app.services.ingest_service import ingest_service
 
 router = APIRouter(prefix="/ingest", tags=["methane-ingestion"])
@@ -31,7 +31,7 @@ async def ingest_methane_emission_readings(
             customer_id=customer_id,
             pool=pool,
         )
-    except EmissionsError as exc:
+    except EmissionsPlatformError as exc:
         return error(
             code=exc.code,
             message=exc.message,
@@ -54,5 +54,9 @@ async def ingest_methane_emission_readings(
             "response_message": ingestion_result.response_message,
             "response_error_message": ingestion_result.response_error_message,
         },
-        status_code=201,
+        status_code=(
+            200
+            if ingestion_result.processing_status.value == "duplicate"
+            else 201
+        ),
     )
