@@ -38,6 +38,22 @@ A full-stack emissions monitoring solution built with **FastAPI**, **PostgreSQL*
 
 ---
 
+## Live deployment
+
+The web application is now live and available for review.
+
+```text
+Frontend: https://high-wood-demo-project.vercel.app/
+Swagger:  https://highwooddemoproject-production.up.railway.app/api/docs
+API:      https://highwooddemoproject-production.up.railway.app/api/v1/health
+Backend:  https://highwooddemoproject-production.up.railway.app
+SourceCode: https://github.com/applicationsoftcraftwang-maker/HighWoodDemoProject  
+```
+
+The backend is deployed on Railway with PostgreSQL, and the frontend is deployed on Vercel. The Railway service runs the FastAPI app on the platform-provided runtime port, currently exposed internally on port `8080`.
+
+---
+
 ## Quick start
 
 From the project root:
@@ -47,7 +63,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Open:
+Open locally:
 
 ```text
 Frontend: http://localhost:5173
@@ -210,8 +226,4 @@ The current implementation is intentionally scoped for a take-home project. In p
 - Scheduled partition creation through `pg_cron` or an app scheduler
 - API gateway rate limiting
 - Centralized metrics and tracing
-- Deployment configuration for Railway, AWS, Azure, or Render
-
-
-
-highwooddemoproject-production.up.railway.app port 80
+- Hardened production deployment configuration for long-term operations
