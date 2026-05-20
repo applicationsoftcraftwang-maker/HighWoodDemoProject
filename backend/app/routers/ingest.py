@@ -54,9 +54,5 @@ async def ingest_methane_emission_readings(
             "response_message": ingestion_result.response_message,
             "response_error_message": ingestion_result.response_error_message,
         },
-        status_code=(
-            200
-            if ingestion_result.processing_status.value == "duplicate"
-            else 201
-        ),
+        status_code=200
     )

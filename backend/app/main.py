@@ -17,11 +17,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
+from fastapi.encoders import jsonable_encoder
 
 from app.db.database import init_emissions_db_pool, shutdown_emissions_db_pool, acquire_emissions_connection
 from app.db.migrate import run_migrations, seed
 from app.middleware.response import success, error
-from app.routers import sites, ingest
+from app.routers import sites, ingest, metrics
 from app.services.notify_service import run_emission_notification_processor
 
 @asynccontextmanager
@@ -73,12 +74,17 @@ app.add_middleware(
 
 @app.exception_handler(RequestValidationError)
 async def fastapi_validation_handler(request: Request, exc: RequestValidationError):
-    return error("VALIDATION_ERROR", "Validation failed", 422, exc.errors())
+    return error(
+        "VALIDATION_ERROR",
+        "Validation failed",
+        422,
+        jsonable_encoder(exc.errors()),
+    )
 
 
 @app.exception_handler(ValidationError)
 async def pydantic_validation_handler(request: Request, exc: ValidationError):
-    return error("VALIDATION_ERROR", "Validation failed", 422, exc.errors())
+    return error("VALIDATION_ERROR", "Validation failed", 422, jsonable_encoder(exc.errors()))
 
 
 @app.exception_handler(HTTPException)
@@ -101,6 +107,7 @@ async def generic_handler(request: Request, exc: Exception):
 prefix = "/api/v1"
 app.include_router(sites.router, prefix=prefix)
 app.include_router(ingest.router, prefix=prefix)
+app.include_router(metrics.router, prefix=prefix)
 
 @app.get("/api/v1/health")
 async def health_check() -> dict[str, str, str]:

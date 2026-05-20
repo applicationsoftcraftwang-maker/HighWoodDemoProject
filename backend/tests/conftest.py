@@ -121,14 +121,28 @@ async def customer_id() -> uuid.UUID:
 
 
 @pytest.fixture
-def customer() -> TestClient:
+def client(pool: asyncpg.Pool) -> TestClient:
     """
     FastAPI test client for API-level tests.
+
+    Keep this fixture name as `client` because test_ingest.py,
+    test_sites.py, and most API tests expect that convention.
     """
     os.environ["DATABASE_URL"] = DATABASE_URL
     os.environ["RUN_MIGRATIONS"] = "false"
 
     from app.main import app
+    app.state.pool = pool
 
-    with TestClient(app) as test_customer:
-        yield test_customer
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def customer(client: TestClient) -> TestClient:
+    """
+    Backward-compatible alias.
+
+    Some older tests may still use `customer`.
+    """
+    return client

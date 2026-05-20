@@ -3,26 +3,25 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-
-
 class MethaneEmissionUnit(str, Enum):
     kg = "kg"
     tonnes = "tonnes"
     lbs = "lbs"
 
 
+class ComplianceStatus(str, Enum):
+    within_limit = "within_limit"
+    limit_exceeded = "limit_exceeded"
 class IngestionProcessingStatus(str, Enum):
     pending = "pending"
     processing = "processing"
     processed = "processed"
     duplicate = "duplicate"
     failed = "failed"
-
-
 class NotificationCategory(str, Enum):
     limit_warning = "limit_warning"
     limit_exceeded = "limit_exceeded"
@@ -105,3 +104,14 @@ class EmissionAuditEventResponse(BaseModel):
     resource_id: UUID | None = None
     event_payload: dict[str, Any] | None = None
     created_at: datetime
+
+
+class SiteMetricsResponse(BaseModel):
+    site_id: UUID
+    site_name: str
+    emission_limit: float
+    total_emissions_to_date: float
+    compliance_status: ComplianceStatus
+    utilization_percent: float
+    measurement_count: int
+    last_measurement_at: Optional[datetime]
