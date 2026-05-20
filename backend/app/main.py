@@ -10,6 +10,7 @@ Routers (sites, ingest, metrics) come in subsequent commits.
 
 from __future__ import annotations
 import os
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -21,6 +22,7 @@ from app.db.database import init_emissions_db_pool, shutdown_emissions_db_pool, 
 from app.db.migrate import run_migrations, seed
 from app.middleware.response import success, error
 from app.routers import sites, ingest
+from app.services.notify_service import run_emission_notification_processor
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,7 +35,18 @@ async def lifespan(app: FastAPI):
         async with acquire_emissions_connection() as conn:
             await run_migrations(conn)
             await seed(conn)
+
+    # Start the background processor for pending notifications.
+    # In production, this would dispatch real notifications to downstream systems.
+    notification_task = asyncio.create_task(
+        run_emission_notification_processor(db_pool))
     yield
+
+    notification_task.cancel()
+    try:
+        await notification_task
+    except asyncio.CancelledError:
+        pass
     await shutdown_emissions_db_pool()
 
 
@@ -94,5 +107,5 @@ async def health_check() -> dict[str, str, str]:
     return {
         "status": "ok",
         "service": "methane-emissions-platform",
-        "version": "0.3.0",
+        "version": "0.7.0",
     }

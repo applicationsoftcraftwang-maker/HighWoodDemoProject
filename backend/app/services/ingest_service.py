@@ -75,22 +75,15 @@ class IngestService:
             )
 
     async def _execute_command(self, conn: asyncpg.Connection, dto: IngestBatchRequest, customer_id: UUID, request_fingerprint: str,) -> IngestBatchResponse:
-        site_row = await conn.fetchrow(
-            """
-            SELECT
-                site_id,
-                methane_emission_limit,
-                methane_accumulated_emissions_to_date
-            FROM sites
-            WHERE site_id = $1
-                AND customer_id = $2
-            """,
-            dto.site_id,
-            customer_id,
+        received_record_count = len(dto.readings)
+        processed_record_count = received_record_count
+        total_methane_value = sum(
+            (
+                Decimal(str(reading.emission_value))
+                for reading in dto.readings
+            ),
+            Decimal("0"),
         )
-
-        if site_row is None:
-            raise CustomerSiteNotFoundError(str(dto.site_id))
 
         async with conn.transaction():
             # Step 1: PESSIMISTIC LOCK FIRST
@@ -110,6 +103,21 @@ class IngestService:
             )
             if site_row is None:
                 raise CustomerSiteNotFoundError(str(dto.site_id))
+
+            previous_site_total = Decimal(
+                str(site_row["methane_accumulated_emissions_to_date"])
+            )
+            methane_limit = Decimal(
+                str(site_row["methane_emission_limit"])
+            )
+            new_site_total = previous_site_total + total_methane_value
+            limit_exceeded = new_site_total > methane_limit
+
+            response_message = (
+                "Methane readings processed, but the configured site limit was exceeded"
+                if limit_exceeded
+                else "Methane readings processed successfully"
+            )
 
             # Step 2: insert idempotency record
             try:
@@ -175,22 +183,6 @@ class IngestService:
                     )
                     for reading in dto.readings
                 ],
-            )
-
-            received_record_count = len(dto.readings)
-            processed_record_count = received_record_count
-            total_methane_value = sum(Decimal(reading.emission_value)
-                                      for reading in dto.readings)
-            previous_site_total = Decimal(
-                site_row["methane_accumulated_emissions_to_date"])
-            methane_limit = Decimal(site_row["methane_emission_limit"])
-            new_site_total = previous_site_total + total_methane_value
-            limit_exceeded = new_site_total > methane_limit
-
-            response_message = (
-                "Methane readings processed, but the configured site limit was exceeded"
-                if limit_exceeded
-                else "Methane readings processed successfully"
             )
 
             # Step 4: atomically update site total ingestions
