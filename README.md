@@ -211,3 +211,7 @@ The current implementation is intentionally scoped for a take-home project. In p
 - API gateway rate limiting
 - Centralized metrics and tracing
 - Deployment configuration for Railway, AWS, Azure, or Render
+
+
+
+highwooddemoproject-production.up.railway.app port 80
