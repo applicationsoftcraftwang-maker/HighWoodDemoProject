@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Methane Emissions API",
     description="Industrial methane emissions ingestion & analytics.",
-    version="0.3.0",
+    version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     lifespan=lifespan,
@@ -114,5 +114,5 @@ async def health_check() -> dict[str, str, str]:
     return {
         "status": "ok",
         "service": "methane-emissions-platform",
-        "version": "0.7.0",
+        "version": "1.0.0",
     }

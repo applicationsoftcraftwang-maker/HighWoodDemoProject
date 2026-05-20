@@ -17,7 +17,7 @@ async def init_emissions_db_pool() -> asyncpg.Pool:
         return _emissions_db_pool
 
     database_url = os.getenv(
-        "EMISSIONS_DATABASE_URL",
+        "DATABASE_URL",
         "postgresql://emissions:emissions@localhost:5432/emissions"
     )
 

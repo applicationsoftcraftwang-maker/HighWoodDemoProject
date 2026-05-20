@@ -12,13 +12,38 @@ services:
     volumes:
       - emissions_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  # Optional: DB admin UI for reviewers/candidates. Safe to keep.
-  # If you don't want extra surface area, remove this service.
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: emissions_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-emissions}:${POSTGRES_PASSWORD:-emissions}@postgres:5432/${POSTGRES_DB:-emissions}
+      FRONTEND_URL: http://localhost:5173,http://localhost:80,http://frontend
+      RUN_MIGRATIONS: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: emissions_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
   pgadmin:
     image: dpage/pgadmin4:8
     container_name: emissions_pgadmin

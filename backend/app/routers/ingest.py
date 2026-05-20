@@ -56,3 +56,32 @@ async def ingest_methane_emission_readings(
         },
         status_code=200
     )
+
+
+@router.get("/stats")
+async def get_ingest_stats(request: Request):
+    pool = request.app.state.db_pool
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT
+                COALESCE(SUM(s.methane_accumulated_emissions_to_date), 0) AS total_emissions_to_date,
+                COALESCE(SUM(s.methane_emission_limit), 0) AS emission_limit,
+                COUNT(DISTINCT s.site_id) AS active_sites,
+                (
+                    SELECT COUNT(*)
+                    FROM methane_emission_readings r
+                ) AS total_measurements
+            FROM sites s
+            """
+        )
+
+    return success(
+        {
+            "total_emissions_to_date": float(row["total_emissions_to_date"] or 0),
+            "emission_limit": float(row["emission_limit"] or 0),
+            "total_measurements": int(row["total_measurements"] or 0),
+            "active_sites": int(row["active_sites"] or 0),
+        }
+    )
